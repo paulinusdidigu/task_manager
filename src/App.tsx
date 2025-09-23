@@ -1,6 +1,7 @@
 import React from 'react';
 import LoginPage from './components/LoginPage';
 import SignupPage from './components/SignupPage';
+import Dashboard from './components/Dashboard';
 
 function App() {
   const [currentPage, setCurrentPage] = React.useState<'home' | 'login' | 'signup' | 'dashboard'>('home');
@@ -14,10 +15,14 @@ function App() {
   };
 
   const handleDashboard = () => {
-    console.log('Navigate to dashboard');
+    setCurrentPage('dashboard');
   };
 
   const handleBack = () => {
+    setCurrentPage('home');
+  };
+
+  const handleLogout = () => {
     setCurrentPage('home');
   };
 
@@ -27,6 +32,10 @@ function App() {
 
   if (currentPage === 'signup') {
     return <SignupPage onBack={handleBack} />;
+  }
+
+  if (currentPage === 'dashboard') {
+    return <Dashboard onLogout={handleLogout} />;
   }
 
   return (
