@@ -1,5 +1,6 @@
 import React from 'react';
 import LoginPage from './components/LoginPage';
+import SignupPage from './components/SignupPage';
 
 function App() {
   const [currentPage, setCurrentPage] = React.useState<'home' | 'login' | 'signup' | 'dashboard'>('home');
@@ -9,7 +10,7 @@ function App() {
   };
 
   const handleSignup = () => {
-    console.log('Navigate to signup');
+    setCurrentPage('signup');
   };
 
   const handleDashboard = () => {
@@ -22,6 +23,10 @@ function App() {
 
   if (currentPage === 'login') {
     return <LoginPage onBack={handleBack} />;
+  }
+
+  if (currentPage === 'signup') {
+    return <SignupPage onBack={handleBack} />;
   }
 
   return (
