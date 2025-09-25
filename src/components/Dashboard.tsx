@@ -1,18 +1,36 @@
-import React, { useState } from 'react';
-import { LogOut, Plus } from 'lucide-react';
-import { signOut } from '../lib/supabase';
+import React, { useState, useEffect } from 'react';
+import { LogOut, Plus, Trash2 } from 'lucide-react';
+import { signOut, getTasks, createTask, updateTaskStatus, updateTaskPriority, deleteTask, Task } from '../lib/supabase';
 
 interface DashboardProps {
   onLogout: () => void;
 }
 
 function Dashboard({ onLogout }: DashboardProps) {
-  const [tasks, setTasks] = useState([
-    'Finish homework',
-    'Call John',
-    'Buy groceries'
-  ]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [newTask, setNewTask] = useState('');
+  const [newTaskPriority, setNewTaskPriority] = useState<'low' | 'medium' | 'high'>('medium');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    loadTasks();
+  }, []);
+
+  const loadTasks = async () => {
+    try {
+      const { data, error } = await getTasks();
+      if (error) {
+        setError(error.message);
+      } else {
+        setTasks(data || []);
+      }
+    } catch (err) {
+      setError('Failed to load tasks');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLogout = async () => {
     try {
@@ -26,11 +44,90 @@ function Dashboard({ onLogout }: DashboardProps) {
 
   const handleAddTask = (e: React.FormEvent) => {
     e.preventDefault();
-    if (newTask.trim()) {
-      setTasks([...tasks, newTask.trim()]);
-      setNewTask('');
+    if (!newTask.trim()) return;
+
+    try {
+      const { data, error } = await createTask(newTask.trim(), newTaskPriority);
+      if (error) {
+        setError(error.message);
+      } else if (data) {
+        setTasks([data[0], ...tasks]);
+        setNewTask('');
+        setNewTaskPriority('medium');
+      }
+    } catch (err) {
+      setError('Failed to add task');
     }
   };
+
+  const handleStatusChange = async (taskId: string, newStatus: 'pending' | 'in-progress' | 'done') => {
+    try {
+      const { error } = await updateTaskStatus(taskId, newStatus);
+      if (error) {
+        setError(error.message);
+      } else {
+        setTasks(tasks.map(task => 
+          task.id === taskId ? { ...task, status: newStatus } : task
+        ));
+      }
+    } catch (err) {
+      setError('Failed to update task status');
+    }
+  };
+
+  const handlePriorityChange = async (taskId: string, newPriority: 'low' | 'medium' | 'high') => {
+    try {
+      const { error } = await updateTaskPriority(taskId, newPriority);
+      if (error) {
+        setError(error.message);
+      } else {
+        setTasks(tasks.map(task => 
+          task.id === taskId ? { ...task, priority: newPriority } : task
+        ));
+      }
+    } catch (err) {
+      setError('Failed to update task priority');
+    }
+  };
+
+  const handleDeleteTask = async (taskId: string) => {
+    try {
+      const { error } = await deleteTask(taskId);
+      if (error) {
+        setError(error.message);
+      } else {
+        setTasks(tasks.filter(task => task.id !== taskId));
+      }
+    } catch (err) {
+      setError('Failed to delete task');
+    }
+  };
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'high': return 'bg-red-100 text-red-700 border-red-200';
+      case 'medium': return 'bg-yellow-100 text-yellow-700 border-yellow-200';
+      case 'low': return 'bg-green-100 text-green-700 border-green-200';
+      default: return 'bg-gray-100 text-gray-700 border-gray-200';
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'done': return 'bg-green-100 text-green-700 border-green-200';
+      case 'in-progress': return 'bg-blue-100 text-blue-700 border-blue-200';
+      case 'pending': return 'bg-gray-100 text-gray-700 border-gray-200';
+      default: return 'bg-gray-100 text-gray-700 border-gray-200';
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-sky-100 via-blue-50 to-cyan-100 flex items-center justify-center">
+        <div className="text-xl text-gray-600">Loading tasks...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-100 via-blue-50 to-cyan-100 flex items-center justify-center p-4 font-sans">
@@ -42,23 +139,443 @@ function Dashboard({ onLogout }: DashboardProps) {
             <h1 className="text-4xl md:text-5xl font-bold text-gray-800 mb-4 animate-slide-up">
               Your Tasks
             </h1>
+            {error && (
+              <div className="mt-4 p-3 bg-red-100 border border-red-300 text-red-700 rounded-lg text-sm">
+                {error}
+              </div>
+            )}
           </div>
 
           {/* Tasks List */}
           <div className="mb-10 animate-slide-up" style={{ animationDelay: '0.1s' }}>
             <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-              <ul className="space-y-4">
-                {tasks.map((task, index) => (
-                  <li key={index} className="flex items-center text-lg text-gray-700">
-                    <span className="w-8 h-8 bg-sky-100 text-sky-600 rounded-full flex items-center justify-center font-semibold text-sm mr-4">
-                      {index + 1}
-                    </span>
-                    {task}
-                  </li>
-                ))}
-              </ul>
+              {tasks.length === 0 ? (
+                <p className="text-gray-500 text-center py-8">No tasks yet. Add your first task below!</p>
+              ) : (
+                <div className="space-y-4">
+                  {tasks.map((task, index) => (
+                    <div key={task.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+                      <div className="flex items-center flex-1">
+                        <span className="w-8 h-8 bg-sky-100 text-sky-600 rounded-full flex items-center justify-center font-semibold text-sm mr-4 flex-shrink-0">
+                          {index + 1}
+                        </span>
+                        <div className="flex-1">
+                          <h3 className="text-lg text-gray-800 font-medium mb-2">{task.title}</h3>
+                          <div className="flex flex-wrap gap-2">
+                            <select
+                              value={task.priority}
+                              onChange={(e) => handlePriorityChange(task.id, e.target.value as 'low' | 'medium' | 'high')}
+                              className={`px-3 py-1 rounded-full text-xs font-medium border ${getPriorityColor(task.priority)} focus:outline-none focus:ring-2 focus:ring-sky-300`}
+                            >
+                              <option value="low">Low Priority</option>
+                              <option value="medium">Medium Priority</option>
+                              <option value="high">High Priority</option>
+                            </select>
+                            <select
+                              value={task.status}
+                              onChange={(e) => handleStatusChange(task.id, e.target.value as 'pending' | 'in-progress' | 'done')}
+                              className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(task.status)} focus:outline-none focus:ring-2 focus:ring-sky-300`}
+                            >
+                              <option value="pending">Pending</option>
+                              <option value="in-progress">In Progress</option>
+                              <option value="done">Done</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteTask(task.id)}
+                        className="ml-4 p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors duration-200"
+                        title="Delete task"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
+
+          {/* Add Task Section */}
+          <form onSubmit={handleAddTask} className="mb-8 animate-slide-up" style={{ animationDelay: '0.2s' }}>
+            <div className="mb-4">
+              <label htmlFor="newTask" className="block text-sm font-semibold text-gray-700 mb-2">
+                New Task
+              </label>
+              <div className="flex flex-col gap-4">
+                <input
+                  type="text"
+                  id="newTask"
+                  value={newTask}
+                  onChange={(e) => setNewTask(e.target.value)}
+                  className="w-full px-4 py-4 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-300 focus:ring-opacity-50 focus:border-sky-400 transition-all duration-300 text-gray-800 placeholder-gray-400"
+                  placeholder="Enter a new task..."
+                  required
+                />
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <select
+                    value={newTaskPriority}
+                    onChange={(e) => setNewTaskPriority(e.target.value as 'low' | 'medium' | 'high')}
+                    className="px-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-300 focus:ring-opacity-50 focus:border-sky-400 transition-all duration-300 text-gray-800"
+                  >
+                    <option value="low">Low Priority</option>
+                    <option value="medium">Medium Priority</option>
+                    <option value="high">High Priority</option>
+                  </select>
+                  <button
+                    type="submit"
+                    className="px-8 py-3 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 ease-in-out focus:outline-none focus:ring-4 focus:ring-blue-300 focus:ring-opacity-50 flex items-center justify-center gap-2 min-w-[140px]"
+                  >
+                    <Plus className="w-5 h-5" />
+                    Add Task
+                  </button>
+                </div>
+              </div>
+            </div>
+          </form>
+
+          {/* Add Task Section - Old version to remove */}
+          <form onSubmit={handleAddTask} className="mb-8 animate-slide-up" style={{ animationDelay: '0.2s' }}>
+            <div className="mb-4">
+              <label htmlFor="newTask" className="block text-sm font-semibold text-gray-700 mb-2">
+                New Task
+              </label>
+              <div className="flex flex-col gap-4">
+                <input
+                  type="text"
+                  id="newTask"
+                  value={newTask}
+                  onChange={(e) => setNewTask(e.target.value)}
+                  className="w-full px-4 py-4 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-300 focus:ring-opacity-50 focus:border-sky-400 transition-all duration-300 text-gray-800 placeholder-gray-400"
+                  placeholder="Enter a new task..."
+                  required
+                />
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <select
+                    value={newTaskPriority}
+                    onChange={(e) => setNewTaskPriority(e.target.value as 'low' | 'medium' | 'high')}
+                    className="px-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-300 focus:ring-opacity-50 focus:border-sky-400 transition-all duration-300 text-gray-800"
+                  >
+                    <option value="low">Low Priority</option>
+                    <option value="medium">Medium Priority</option>
+                    <option value="high">High Priority</option>
+                  </select>
+                  <button
+                    type="submit"
+                    className="px-8 py-3 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 ease-in-out focus:outline-none focus:ring-4 focus:ring-blue-300 focus:ring-opacity-50 flex items-center justify-center gap-2 min-w-[140px]"
+                  >
+                    <Plus className="w-5 h-5" />
+                    Add Task
+                  </button>
+                </div>
+              </div>
+            </div>
+          </form>
+
+          {/* Add Task Section */}
+          <form onSubmit={handleAddTask} className="mb-8 animate-slide-up" style={{ animationDelay: '0.2s' }}>
+            <div className="mb-4">
+              <label htmlFor="newTask" className="block text-sm font-semibold text-gray-700 mb-2">
+                New Task
+              </label>
+              <div className="flex flex-col gap-4">
+                <input
+                  type="text"
+                  id="newTask"
+                  value={newTask}
+                  onChange={(e) => setNewTask(e.target.value)}
+                  className="w-full px-4 py-4 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-300 focus:ring-opacity-50 focus:border-sky-400 transition-all duration-300 text-gray-800 placeholder-gray-400"
+                  placeholder="Enter a new task..."
+                  required
+                />
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <select
+                    value={newTaskPriority}
+                    onChange={(e) => setNewTaskPriority(e.target.value as 'low' | 'medium' | 'high')}
+                    className="px-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-300 focus:ring-opacity-50 focus:border-sky-400 transition-all duration-300 text-gray-800"
+                  >
+                    <option value="low">Low Priority</option>
+                    <option value="medium">Medium Priority</option>
+                    <option value="high">High Priority</option>
+                  </select>
+                  <button
+                    type="submit"
+                    className="px-8 py-3 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 ease-in-out focus:outline-none focus:ring-4 focus:ring-blue-300 focus:ring-opacity-50 flex items-center justify-center gap-2 min-w-[140px]"
+                  >
+                    <Plus className="w-5 h-5" />
+                    Add Task
+                  </button>
+                </div>
+              </div>
+            </div>
+          </form>
+
+          {/* Add Task Section */}
+          <form onSubmit={handleAddTask} className="mb-8 animate-slide-up" style={{ animationDelay: '0.2s' }}>
+            <div className="mb-4">
+              <label htmlFor="newTask" className="block text-sm font-semibold text-gray-700 mb-2">
+                New Task
+              </label>
+              <div className="flex flex-col gap-4">
+                <input
+                  type="text"
+                  id="newTask"
+                  value={newTask}
+                  onChange={(e) => setNewTask(e.target.value)}
+                  className="w-full px-4 py-4 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-300 focus:ring-opacity-50 focus:border-sky-400 transition-all duration-300 text-gray-800 placeholder-gray-400"
+                  placeholder="Enter a new task..."
+                  required
+                />
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <select
+                    value={newTaskPriority}
+                    onChange={(e) => setNewTaskPriority(e.target.value as 'low' | 'medium' | 'high')}
+                    className="px-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-300 focus:ring-opacity-50 focus:border-sky-400 transition-all duration-300 text-gray-800"
+                  >
+                    <option value="low">Low Priority</option>
+                    <option value="medium">Medium Priority</option>
+                    <option value="high">High Priority</option>
+                  </select>
+                  <button
+                    type="submit"
+                    className="px-8 py-3 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 ease-in-out focus:outline-none focus:ring-4 focus:ring-blue-300 focus:ring-opacity-50 flex items-center justify-center gap-2 min-w-[140px]"
+                  >
+                    <Plus className="w-5 h-5" />
+                    Add Task
+                  </button>
+                </div>
+              </div>
+            </div>
+          </form>
+
+          {/* Add Task Section */}
+          <form onSubmit={handleAddTask} className="mb-8 animate-slide-up" style={{ animationDelay: '0.2s' }}>
+            <div className="mb-4">
+              <label htmlFor="newTask" className="block text-sm font-semibold text-gray-700 mb-2">
+                New Task
+              </label>
+              <div className="flex flex-col gap-4">
+                <input
+                  type="text"
+                  id="newTask"
+                  value={newTask}
+                  onChange={(e) => setNewTask(e.target.value)}
+                  className="w-full px-4 py-4 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-300 focus:ring-opacity-50 focus:border-sky-400 transition-all duration-300 text-gray-800 placeholder-gray-400"
+                  placeholder="Enter a new task..."
+                  required
+                />
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <select
+                    value={newTaskPriority}
+                    onChange={(e) => setNewTaskPriority(e.target.value as 'low' | 'medium' | 'high')}
+                    className="px-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-300 focus:ring-opacity-50 focus:border-sky-400 transition-all duration-300 text-gray-800"
+                  >
+                    <option value="low">Low Priority</option>
+                    <option value="medium">Medium Priority</option>
+                    <option value="high">High Priority</option>
+                  </select>
+                  <button
+                    type="submit"
+                    className="px-8 py-3 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 ease-in-out focus:outline-none focus:ring-4 focus:ring-blue-300 focus:ring-opacity-50 flex items-center justify-center gap-2 min-w-[140px]"
+                  >
+                    <Plus className="w-5 h-5" />
+                    Add Task
+                  </button>
+                </div>
+              </div>
+            </div>
+          </form>
+
+          {/* Add Task Section */}
+          <form onSubmit={handleAddTask} className="mb-8 animate-slide-up" style={{ animationDelay: '0.2s' }}>
+            <div className="mb-4">
+              <label htmlFor="newTask" className="block text-sm font-semibold text-gray-700 mb-2">
+                New Task
+              </label>
+              <div className="flex flex-col gap-4">
+                <input
+                  type="text"
+                  id="newTask"
+                  value={newTask}
+                  onChange={(e) => setNewTask(e.target.value)}
+                  className="w-full px-4 py-4 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-300 focus:ring-opacity-50 focus:border-sky-400 transition-all duration-300 text-gray-800 placeholder-gray-400"
+                  placeholder="Enter a new task..."
+                  required
+                />
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <select
+                    value={newTaskPriority}
+                    onChange={(e) => setNewTaskPriority(e.target.value as 'low' | 'medium' | 'high')}
+                    className="px-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-300 focus:ring-opacity-50 focus:border-sky-400 transition-all duration-300 text-gray-800"
+                  >
+                    <option value="low">Low Priority</option>
+                    <option value="medium">Medium Priority</option>
+                    <option value="high">High Priority</option>
+                  </select>
+                  <button
+                    type="submit"
+                    className="px-8 py-3 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 ease-in-out focus:outline-none focus:ring-4 focus:ring-blue-300 focus:ring-opacity-50 flex items-center justify-center gap-2 min-w-[140px]"
+                  >
+                    <Plus className="w-5 h-5" />
+                    Add Task
+                  </button>
+                </div>
+              </div>
+            </div>
+          </form>
+
+          {/* Add Task Section */}
+          <form onSubmit={handleAddTask} className="mb-8 animate-slide-up" style={{ animationDelay: '0.2s' }}>
+            <div className="mb-4">
+              <label htmlFor="newTask" className="block text-sm font-semibold text-gray-700 mb-2">
+                New Task
+              </label>
+              <div className="flex flex-col gap-4">
+                <input
+                  type="text"
+                  id="newTask"
+                  value={newTask}
+                  onChange={(e) => setNewTask(e.target.value)}
+                  className="w-full px-4 py-4 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-300 focus:ring-opacity-50 focus:border-sky-400 transition-all duration-300 text-gray-800 placeholder-gray-400"
+                  placeholder="Enter a new task..."
+                  required
+                />
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <select
+                    value={newTaskPriority}
+                    onChange={(e) => setNewTaskPriority(e.target.value as 'low' | 'medium' | 'high')}
+                    className="px-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-300 focus:ring-opacity-50 focus:border-sky-400 transition-all duration-300 text-gray-800"
+                  >
+                    <option value="low">Low Priority</option>
+                    <option value="medium">Medium Priority</option>
+                    <option value="high">High Priority</option>
+                  </select>
+                  <button
+                    type="submit"
+                    className="px-8 py-3 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 ease-in-out focus:outline-none focus:ring-4 focus:ring-blue-300 focus:ring-opacity-50 flex items-center justify-center gap-2 min-w-[140px]"
+                  >
+                    <Plus className="w-5 h-5" />
+                    Add Task
+                  </button>
+                </div>
+              </div>
+            </div>
+          </form>
+
+          {/* Add Task Section */}
+          <form onSubmit={handleAddTask} className="mb-8 animate-slide-up" style={{ animationDelay: '0.2s' }}>
+            <div className="mb-4">
+              <label htmlFor="newTask" className="block text-sm font-semibold text-gray-700 mb-2">
+                New Task
+              </label>
+              <div className="flex flex-col gap-4">
+                <input
+                  type="text"
+                  id="newTask"
+                  value={newTask}
+                  onChange={(e) => setNewTask(e.target.value)}
+                  className="w-full px-4 py-4 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-300 focus:ring-opacity-50 focus:border-sky-400 transition-all duration-300 text-gray-800 placeholder-gray-400"
+                  placeholder="Enter a new task..."
+                  required
+                />
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <select
+                    value={newTaskPriority}
+                    onChange={(e) => setNewTaskPriority(e.target.value as 'low' | 'medium' | 'high')}
+                    className="px-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-300 focus:ring-opacity-50 focus:border-sky-400 transition-all duration-300 text-gray-800"
+                  >
+                    <option value="low">Low Priority</option>
+                    <option value="medium">Medium Priority</option>
+                    <option value="high">High Priority</option>
+                  </select>
+                  <button
+                    type="submit"
+                    className="px-8 py-3 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 ease-in-out focus:outline-none focus:ring-4 focus:ring-blue-300 focus:ring-opacity-50 flex items-center justify-center gap-2 min-w-[140px]"
+                  >
+                    <Plus className="w-5 h-5" />
+                    Add Task
+                  </button>
+                </div>
+              </div>
+            </div>
+          </form>
+
+          {/* Add Task Section */}
+          <form onSubmit={handleAddTask} className="mb-8 animate-slide-up" style={{ animationDelay: '0.2s' }}>
+            <div className="mb-4">
+              <label htmlFor="newTask" className="block text-sm font-semibold text-gray-700 mb-2">
+                New Task
+              </label>
+              <div className="flex flex-col gap-4">
+                <input
+                  type="text"
+                  id="newTask"
+                  value={newTask}
+                  onChange={(e) => setNewTask(e.target.value)}
+                  className="w-full px-4 py-4 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-300 focus:ring-opacity-50 focus:border-sky-400 transition-all duration-300 text-gray-800 placeholder-gray-400"
+                  placeholder="Enter a new task..."
+                  required
+                />
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <select
+                    value={newTaskPriority}
+                    onChange={(e) => setNewTaskPriority(e.target.value as 'low' | 'medium' | 'high')}
+                    className="px-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-300 focus:ring-opacity-50 focus:border-sky-400 transition-all duration-300 text-gray-800"
+                  >
+                    <option value="low">Low Priority</option>
+                    <option value="medium">Medium Priority</option>
+                    <option value="high">High Priority</option>
+                  </select>
+                  <button
+                    type="submit"
+                    className="px-8 py-3 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 ease-in-out focus:outline-none focus:ring-4 focus:ring-blue-300 focus:ring-opacity-50 flex items-center justify-center gap-2 min-w-[140px]"
+                  >
+                    <Plus className="w-5 h-5" />
+                    Add Task
+                  </button>
+                </div>
+              </div>
+            </div>
+          </form>
+
+          {/* Add Task Section */}
+          <form onSubmit={handleAddTask} className="mb-8 animate-slide-up" style={{ animationDelay: '0.2s' }}>
+            <div className="mb-4">
+              <label htmlFor="newTask" className="block text-sm font-semibold text-gray-700 mb-2">
+                New Task
+              </label>
+              <div className="flex flex-col gap-4">
+                <input
+                  type="text"
+                  id="newTask"
+                  value={newTask}
+                  onChange={(e) => setNewTask(e.target.value)}
+                  className="w-full px-4 py-4 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-300 focus:ring-opacity-50 focus:border-sky-400 transition-all duration-300 text-gray-800 placeholder-gray-400"
+                  placeholder="Enter a new task..."
+                  required
+                />
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <select
+                    value={newTaskPriority}
+                    onChange={(e) => setNewTaskPriority(e.target.value as 'low' | 'medium' | 'high')}
+                    className="px-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-300 focus:ring-opacity-50 focus:border-sky-400 transition-all duration-300 text-gray-800"
+                  >
+                    <option value="low">Low Priority</option>
+                    <option value="medium">Medium Priority</option>
+                    <option value="high">High Priority</option>
+                  </select>
+                  <button
+                    type="submit"
+                    className="px-8 py-3 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 ease-in-out focus:outline-none focus:ring-4 focus:ring-blue-300 focus:ring-opacity-50 flex items-center justify-center gap-2 min-w-[140px]"
+                  >
+                    <Plus className="w-5 h-5" />
+                    Add Task
+                  </button>
+                </div>
+              </div>
+            </div>
+          </form>
 
           {/* Add Task Section */}
           <form onSubmit={handleAddTask} className="mb-8 animate-slide-up" style={{ animationDelay: '0.2s' }}>
@@ -74,8 +591,17 @@ function Dashboard({ onLogout }: DashboardProps) {
                   onChange={(e) => setNewTask(e.target.value)}
                   className="flex-1 px-4 py-4 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-300 focus:ring-opacity-50 focus:border-sky-400 transition-all duration-300 text-gray-800 placeholder-gray-400"
                   placeholder="Enter a new task..."
+                  required
                 />
-                <button
+                <select
+                  value={newTaskPriority}
+                  onChange={(e) => setNewTaskPriority(e.target.value as 'low' | 'medium' | 'high')}
+                  className="px-4 py-4 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-300 focus:ring-opacity-50 focus:border-sky-400 transition-all duration-300 text-gray-800 min-w-[160px]"
+                >
+                  <option value="low">Low Priority</option>
+                  <option value="medium">Medium Priority</option>
+                  <option value="high">High Priority</option>
+                </select>
                   type="submit"
                   className="px-8 py-4 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 ease-in-out focus:outline-none focus:ring-4 focus:ring-blue-300 focus:ring-opacity-50 flex items-center justify-center gap-2 min-w-[140px]"
                 >
