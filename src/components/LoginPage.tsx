@@ -1,18 +1,36 @@
 import React, { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
+import { signIn } from '../lib/supabase';
 
 interface LoginPageProps {
   onBack: () => void;
+  onLoginSuccess: () => void;
 }
 
-function LoginPage({ onBack }: LoginPageProps) {
+function LoginPage({ onBack, onLoginSuccess }: LoginPageProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Login attempt:', { email, password });
-    // Handle login logic here
+    setLoading(true);
+    setError('');
+
+    try {
+      const { data, error } = await signIn(email, password);
+      
+      if (error) {
+        setError(error.message);
+      } else if (data.user) {
+        onLoginSuccess();
+      }
+    } catch (err) {
+      setError('An unexpected error occurred');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -37,6 +55,11 @@ function LoginPage({ onBack }: LoginPageProps) {
             <p className="text-gray-600 font-light">
               Welcome back! Please sign in to your account.
             </p>
+            {error && (
+              <div className="mt-4 p-3 bg-red-100 border border-red-300 text-red-700 rounded-lg text-sm">
+                {error}
+              </div>
+            )}
           </div>
 
           {/* Login Form */}
@@ -77,9 +100,10 @@ function LoginPage({ onBack }: LoginPageProps) {
             <div className="pt-4 animate-slide-up" style={{ animationDelay: '0.3s' }}>
               <button
                 type="submit"
-                className="w-full px-8 py-4 bg-sky-500 hover:bg-sky-600 text-white font-semibold text-lg rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 ease-in-out focus:outline-none focus:ring-4 focus:ring-sky-300 focus:ring-opacity-50"
+                disabled={loading}
+                className="w-full px-8 py-4 bg-sky-500 hover:bg-sky-600 disabled:bg-sky-300 disabled:cursor-not-allowed text-white font-semibold text-lg rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 disabled:transform-none transition-all duration-300 ease-in-out focus:outline-none focus:ring-4 focus:ring-sky-300 focus:ring-opacity-50"
               >
-                Login
+                {loading ? 'Signing in...' : 'Login'}
               </button>
             </div>
           </form>

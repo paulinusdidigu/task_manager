@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { LogOut, Plus } from 'lucide-react';
+import { signOut } from '../lib/supabase';
 
 interface DashboardProps {
   onLogout: () => void;
@@ -12,6 +13,16 @@ function Dashboard({ onLogout }: DashboardProps) {
     'Buy groceries'
   ]);
   const [newTask, setNewTask] = useState('');
+
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      onLogout();
+    } catch (error) {
+      console.error('Error signing out:', error);
+      onLogout(); // Still logout on error
+    }
+  };
 
   const handleAddTask = (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,7 +89,7 @@ function Dashboard({ onLogout }: DashboardProps) {
           {/* Logout Button */}
           <div className="text-center animate-slide-up" style={{ animationDelay: '0.3s' }}>
             <button
-              onClick={onLogout}
+              onClick={handleLogout}
               className="px-8 py-4 bg-gray-500 hover:bg-gray-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 ease-in-out focus:outline-none focus:ring-4 focus:ring-gray-300 focus:ring-opacity-50 flex items-center justify-center gap-2 mx-auto"
             >
               <LogOut className="w-5 h-5" />
