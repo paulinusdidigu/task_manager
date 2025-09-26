@@ -61,9 +61,14 @@ export const getTasks = async () => {
 }
 
 export const createTask = async (title: string, priority: 'low' | 'medium' | 'high' = 'medium') => {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return { data: null, error: { message: 'User not authenticated' } }
+  }
+  
   const { data, error } = await supabase
     .from('tasks')
-    .insert([{ title, priority, status: 'pending' }])
+    .insert([{ title, priority, status: 'pending', user_id: user.id }])
     .select()
   return { data, error }
 }
