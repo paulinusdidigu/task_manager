@@ -1,6 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { LogOut, Plus, Trash2 } from 'lucide-react';
-import { signOut, getTasks, createTask, updateTaskStatus, updateTaskPriority, deleteTask, Task } from '../lib/supabase';
+import { LogOut, Plus, Trash2, Sparkles, Save, ChevronDown, ChevronUp } from 'lucide-react';
+import { 
+  signOut, 
+  getTasks, 
+  createTask, 
+  updateTaskStatus, 
+  updateTaskPriority, 
+  deleteTask, 
+  Task,
+  getSubtasks,
+  createSubtask,
+  updateSubtaskStatus,
+  deleteSubtask,
+  generateSubtasks,
+  Subtask
+} from '../lib/supabase';
 
 interface DashboardProps {
   onLogout: () => void;
@@ -8,6 +22,10 @@ interface DashboardProps {
 
 function Dashboard({ onLogout }: DashboardProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [subtasks, setSubtasks] = useState<Record<string, Subtask[]>>({});
+  const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
+  const [generatingSubtasks, setGeneratingSubtasks] = useState<Record<string, boolean>>({});
+  const [suggestedSubtasks, setSuggestedSubtasks] = useState<Record<string, string[]>>({});
   const [newTask, setNewTask] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState<'low' | 'medium' | 'high'>('medium');
   const [loading, setLoading] = useState(true);
@@ -24,11 +42,29 @@ function Dashboard({ onLogout }: DashboardProps) {
         setError(error.message);
       } else {
         setTasks(data || []);
+        // Load subtasks for each task
+        if (data) {
+          const subtaskPromises = data.map(task => loadSubtasks(task.id));
+          await Promise.all(subtaskPromises);
+        }
       }
     } catch (err) {
       setError('Failed to load tasks');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadSubtasks = async (taskId: string) => {
+    try {
+      const { data, error } = await getSubtasks(taskId);
+      if (error) {
+        console.error('Failed to load subtasks:', error);
+      } else {
+        setSubtasks(prev => ({ ...prev, [taskId]: data || [] }));
+      }
+    } catch (err) {
+      console.error('Failed to load subtasks:', err);
     }
   };
 
@@ -52,6 +88,7 @@ function Dashboard({ onLogout }: DashboardProps) {
         setError(error.message);
       } else if (data) {
         setTasks([data[0], ...tasks]);
+        setSubtasks(prev => ({ ...prev, [data[0].id]: [] }));
         setNewTask('');
         setNewTaskPriority('medium');
       }
@@ -97,10 +134,106 @@ function Dashboard({ onLogout }: DashboardProps) {
         setError(error.message);
       } else {
         setTasks(tasks.filter(task => task.id !== taskId));
+        setSubtasks(prev => {
+          const newSubtasks = { ...prev };
+          delete newSubtasks[taskId];
+          return newSubtasks;
+        });
+        setSuggestedSubtasks(prev => {
+          const newSuggested = { ...prev };
+          delete newSuggested[taskId];
+          return newSuggested;
+        });
       }
     } catch (err) {
       setError('Failed to delete task');
     }
+  };
+
+  const handleGenerateSubtasks = async (taskId: string, taskTitle: string) => {
+    setGeneratingSubtasks(prev => ({ ...prev, [taskId]: true }));
+    setError('');
+    
+    try {
+      const { data, error } = await generateSubtasks(taskTitle);
+      if (error) {
+        setError(error.message);
+      } else if (data) {
+        setSuggestedSubtasks(prev => ({ ...prev, [taskId]: data }));
+        setExpandedTasks(prev => new Set([...prev, taskId]));
+      }
+    } catch (err) {
+      setError('Failed to generate subtasks');
+    } finally {
+      setGeneratingSubtasks(prev => ({ ...prev, [taskId]: false }));
+    }
+  };
+
+  const handleSaveSubtask = async (taskId: string, subtaskTitle: string) => {
+    try {
+      const { data, error } = await createSubtask(subtaskTitle, taskId);
+      if (error) {
+        setError(error.message);
+      } else if (data) {
+        setSubtasks(prev => ({
+          ...prev,
+          [taskId]: [...(prev[taskId] || []), data[0]]
+        }));
+        // Remove from suggestions
+        setSuggestedSubtasks(prev => ({
+          ...prev,
+          [taskId]: prev[taskId]?.filter(title => title !== subtaskTitle) || []
+        }));
+      }
+    } catch (err) {
+      setError('Failed to save subtask');
+    }
+  };
+
+  const handleSubtaskStatusChange = async (subtaskId: string, newStatus: 'pending' | 'in-progress' | 'done', taskId: string) => {
+    try {
+      const { error } = await updateSubtaskStatus(subtaskId, newStatus);
+      if (error) {
+        setError(error.message);
+      } else {
+        setSubtasks(prev => ({
+          ...prev,
+          [taskId]: prev[taskId]?.map(subtask =>
+            subtask.id === subtaskId ? { ...subtask, status: newStatus } : subtask
+          ) || []
+        }));
+      }
+    } catch (err) {
+      setError('Failed to update subtask status');
+    }
+  };
+
+  const handleDeleteSubtask = async (subtaskId: string, taskId: string) => {
+    try {
+      const { error } = await deleteSubtask(subtaskId);
+      if (error) {
+        setError(error.message);
+      } else {
+        setSubtasks(prev => ({
+          ...prev,
+          [taskId]: prev[taskId]?.filter(subtask => subtask.id !== subtaskId) || []
+        }));
+      }
+    } catch (err) {
+      setError('Failed to delete subtask');
+    }
+  };
+
+  const toggleTaskExpansion = (taskId: string) => {
+    setExpandedTasks(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(taskId)) {
+        newSet.delete(taskId);
+      } else {
+        newSet.add(taskId);
+      }
+      return newSet;
+    });
   };
 
   const getPriorityColor = (priority: string) => {
@@ -154,42 +287,117 @@ function Dashboard({ onLogout }: DashboardProps) {
               ) : (
                 <div className="space-y-4">
                   {tasks.map((task, index) => (
-                    <div key={task.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
-                      <div className="flex items-center flex-1">
-                        <span className="w-8 h-8 bg-sky-100 text-sky-600 rounded-full flex items-center justify-center font-semibold text-sm mr-4 flex-shrink-0">
-                          {index + 1}
-                        </span>
-                        <div className="flex-1">
-                          <h3 className="text-lg text-gray-800 font-medium mb-2">{task.title}</h3>
-                          <div className="flex flex-wrap gap-2">
-                            <select
-                              value={task.priority}
-                              onChange={(e) => handlePriorityChange(task.id, e.target.value as 'low' | 'medium' | 'high')}
-                              className={`px-3 py-1 rounded-full text-xs font-medium border ${getPriorityColor(task.priority)} focus:outline-none focus:ring-2 focus:ring-sky-300`}
-                            >
-                              <option value="low">Low Priority</option>
-                              <option value="medium">Medium Priority</option>
-                              <option value="high">High Priority</option>
-                            </select>
-                            <select
-                              value={task.status}
-                              onChange={(e) => handleStatusChange(task.id, e.target.value as 'pending' | 'in-progress' | 'done')}
-                              className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(task.status)} focus:outline-none focus:ring-2 focus:ring-sky-300`}
-                            >
-                              <option value="pending">Pending</option>
-                              <option value="in-progress">In Progress</option>
-                              <option value="done">Done</option>
-                            </select>
+                    <div key={task.id} className="bg-gray-50 rounded-xl border border-gray-100">
+                      <div className="flex items-center justify-between p-4">
+                        <div className="flex items-center flex-1">
+                          <button
+                            onClick={() => toggleTaskExpansion(task.id)}
+                            className="w-8 h-8 bg-sky-100 text-sky-600 rounded-full flex items-center justify-center font-semibold text-sm mr-4 flex-shrink-0 hover:bg-sky-200 transition-colors duration-200"
+                          >
+                            {expandedTasks.has(task.id) ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </button>
+                          <div className="flex-1">
+                            <h3 className="text-lg text-gray-800 font-medium mb-2">{task.title}</h3>
+                            <div className="flex flex-wrap gap-2">
+                              <select
+                                value={task.priority}
+                                onChange={(e) => handlePriorityChange(task.id, e.target.value as 'low' | 'medium' | 'high')}
+                                className={`px-3 py-1 rounded-full text-xs font-medium border ${getPriorityColor(task.priority)} focus:outline-none focus:ring-2 focus:ring-sky-300`}
+                              >
+                                <option value="low">Low Priority</option>
+                                <option value="medium">Medium Priority</option>
+                                <option value="high">High Priority</option>
+                              </select>
+                              <select
+                                value={task.status}
+                                onChange={(e) => handleStatusChange(task.id, e.target.value as 'pending' | 'in-progress' | 'done')}
+                                className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(task.status)} focus:outline-none focus:ring-2 focus:ring-sky-300`}
+                              >
+                                <option value="pending">Pending</option>
+                                <option value="in-progress">In Progress</option>
+                                <option value="done">Done</option>
+                              </select>
+                            </div>
                           </div>
                         </div>
+                        <button
+                          onClick={() => handleDeleteTask(task.id)}
+                          className="ml-4 p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors duration-200"
+                          title="Delete task"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
-                      <button
-                        onClick={() => handleDeleteTask(task.id)}
-                        className="ml-4 p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors duration-200"
-                        title="Delete task"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+
+                      {/* AI Subtask Generation Button */}
+                      <div className="px-4 pb-4">
+                        <button
+                          onClick={() => handleGenerateSubtasks(task.id, task.title)}
+                          disabled={generatingSubtasks[task.id]}
+                          className="flex items-center gap-2 px-4 py-2 bg-purple-500 hover:bg-purple-600 disabled:bg-purple-300 text-white text-sm font-medium rounded-lg transition-colors duration-200 disabled:cursor-not-allowed"
+                        >
+                          <Sparkles className="w-4 h-4" />
+                          {generatingSubtasks[task.id] ? 'Generating...' : 'Generate Subtasks with AI'}
+                        </button>
+                      </div>
+
+                      {/* Expanded Content */}
+                      {expandedTasks.has(task.id) && (
+                        <div className="px-4 pb-4 border-t border-gray-200 pt-4">
+                          {/* Suggested Subtasks */}
+                          {suggestedSubtasks[task.id] && suggestedSubtasks[task.id].length > 0 && (
+                            <div className="mb-4">
+                              <h4 className="text-sm font-semibold text-gray-700 mb-2">AI Suggestions:</h4>
+                              <div className="space-y-2">
+                                {suggestedSubtasks[task.id].map((suggestion, idx) => (
+                                  <div key={idx} className="flex items-center justify-between p-2 bg-purple-50 rounded-lg border border-purple-100">
+                                    <span className="text-sm text-gray-700 flex-1">{suggestion}</span>
+                                    <button
+                                      onClick={() => handleSaveSubtask(task.id, suggestion)}
+                                      className="ml-2 flex items-center gap-1 px-3 py-1 bg-purple-500 hover:bg-purple-600 text-white text-xs font-medium rounded transition-colors duration-200"
+                                    >
+                                      <Save className="w-3 h-3" />
+                                      Save
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Existing Subtasks */}
+                          {subtasks[task.id] && subtasks[task.id].length > 0 && (
+                            <div>
+                              <h4 className="text-sm font-semibold text-gray-700 mb-2">Subtasks:</h4>
+                              <div className="space-y-2">
+                                {subtasks[task.id].map((subtask) => (
+                                  <div key={subtask.id} className="flex items-center justify-between p-2 bg-white rounded-lg border border-gray-200">
+                                    <div className="flex items-center flex-1">
+                                      <span className="text-sm text-gray-700 flex-1">{subtask.title}</span>
+                                      <select
+                                        value={subtask.status}
+                                        onChange={(e) => handleSubtaskStatusChange(subtask.id, e.target.value as 'pending' | 'in-progress' | 'done', task.id)}
+                                        className={`ml-2 px-2 py-1 rounded text-xs font-medium border ${getStatusColor(subtask.status)} focus:outline-none focus:ring-1 focus:ring-sky-300`}
+                                      >
+                                        <option value="pending">Pending</option>
+                                        <option value="in-progress">In Progress</option>
+                                        <option value="done">Done</option>
+                                      </select>
+                                    </div>
+                                    <button
+                                      onClick={() => handleDeleteSubtask(subtask.id, task.id)}
+                                      className="ml-2 p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors duration-200"
+                                      title="Delete subtask"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
