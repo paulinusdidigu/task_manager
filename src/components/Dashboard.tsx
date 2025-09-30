@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LogOut, Plus, Trash2, Sparkles, Save, ChevronDown, ChevronUp, User } from 'lucide-react';
+import { LogOut, Plus, Trash2, Sparkles, Save, ChevronDown, ChevronUp, User, Search } from 'lucide-react';
 import { 
   signOut, 
   getTasks, 
@@ -13,7 +13,9 @@ import {
   updateSubtaskStatus,
   deleteSubtask,
   generateSubtasks,
-  Subtask
+  Subtask,
+  smartSearchTasks,
+  generateTaskEmbedding
 } from '../lib/supabase';
 
 interface DashboardProps {
@@ -29,6 +31,10 @@ function Dashboard({ onLogout, onProfile }: DashboardProps) {
   const [suggestedSubtasks, setSuggestedSubtasks] = useState<Record<string, string[]>>({});
   const [newTask, setNewTask] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState<'low' | 'medium' | 'high'>('medium');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Task[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [showSearchResults, setShowSearchResults] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -90,6 +96,8 @@ function Dashboard({ onLogout, onProfile }: DashboardProps) {
       } else if (data) {
         setTasks([data[0], ...tasks]);
         setSubtasks(prev => ({ ...prev, [data[0].id]: [] }));
+        // Generate embedding for the new task
+        generateTaskEmbedding(data[0].id, data[0].title);
         setNewTask('');
         setNewTaskPriority('medium');
       }
@@ -237,6 +245,34 @@ function Dashboard({ onLogout, onProfile }: DashboardProps) {
     });
   };
 
+  const handleSmartSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchQuery.trim()) {
+      setShowSearchResults(false);
+      setSearchResults([]);
+      return;
+    }
+
+    setSearching(true);
+    setError('');
+
+    try {
+      const { data, error } = await smartSearchTasks(searchQuery.trim());
+      if (error) {
+        setError(error.message);
+        setShowSearchResults(false);
+      } else {
+        setSearchResults(data || []);
+        setShowSearchResults(true);
+      }
+    } catch (err) {
+      setError('Failed to search tasks');
+      setShowSearchResults(false);
+    } finally {
+      setSearching(false);
+    }
+  };
+
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case 'high': return 'bg-red-100 text-red-700 border-red-200';
@@ -290,8 +326,76 @@ function Dashboard({ onLogout, onProfile }: DashboardProps) {
             )}
           </div>
 
+          {/* Smart Search Section */}
+          <div className="mb-8 animate-slide-up" style={{ animationDelay: '0.1s' }}>
+            <form onSubmit={handleSmartSearch} className="mb-4">
+              <div className="flex flex-col sm:flex-row gap-4">
+                <div className="flex-1">
+                  <label htmlFor="smartSearch" className="block text-sm font-semibold text-gray-700 mb-2">
+                    Smart Search
+                  </label>
+                  <input
+                    type="text"
+                    id="smartSearch"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full px-4 py-4 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-sky-300 focus:ring-opacity-50 focus:border-sky-400 transition-all duration-300 text-gray-800 placeholder-gray-400"
+                    placeholder="Search tasks using natural language..."
+                  />
+                </div>
+                <div className="flex items-end">
+                  <button
+                    type="submit"
+                    disabled={searching}
+                    className="px-6 py-4 bg-sky-500 hover:bg-sky-600 disabled:bg-sky-300 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 disabled:transform-none transition-all duration-300 ease-in-out focus:outline-none focus:ring-4 focus:ring-sky-300 focus:ring-opacity-50 flex items-center justify-center gap-2 min-w-[120px]"
+                  >
+                    <Search className="w-5 h-5" />
+                    {searching ? 'Searching...' : 'Search'}
+                  </button>
+                </div>
+              </div>
+            </form>
+
+            {/* Search Results */}
+            {showSearchResults && (
+              <div className="bg-blue-50 rounded-2xl p-6 border border-blue-100">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">
+                  Search Results for "{searchQuery}"
+                </h3>
+                {searchResults.length === 0 ? (
+                  <p className="text-gray-600 text-center py-4">
+                    No similar tasks found with similarity above 70%.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {searchResults.map((task) => (
+                      <div key={task.id} className="bg-white rounded-xl p-4 shadow-sm border border-blue-200">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <h4 className="text-base font-medium text-gray-800 mb-2">{task.title}</h4>
+                            <div className="flex gap-2">
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getPriorityColor(task.priority)}`}>
+                                {task.priority.charAt(0).toUpperCase() + task.priority.slice(1)} Priority
+                              </span>
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(task.status)}`}>
+                                {task.status === 'in-progress' ? 'In Progress' : task.status.charAt(0).toUpperCase() + task.status.slice(1)}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="text-xs text-gray-500 ml-4">
+                            {task.similarity && `${Math.round(task.similarity * 100)}% match`}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Tasks List */}
-          <div className="mb-10 animate-slide-up" style={{ animationDelay: '0.1s' }}>
+          <div className="mb-10 animate-slide-up" style={{ animationDelay: '0.2s' }}>
             <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
               {tasks.length === 0 ? (
                 <p className="text-gray-500 text-center py-8">No tasks yet. Add your first task below!</p>
@@ -417,7 +521,7 @@ function Dashboard({ onLogout, onProfile }: DashboardProps) {
           </div>
 
           {/* Add Task Section */}
-          <form onSubmit={handleAddTask} className="mb-8 animate-slide-up" style={{ animationDelay: '0.2s' }}>
+          <form onSubmit={handleAddTask} className="mb-8 animate-slide-up" style={{ animationDelay: '0.3s' }}>
             <div className="mb-4">
               <label htmlFor="newTask" className="block text-sm font-semibold text-gray-700 mb-2">
                 New Task
@@ -453,7 +557,7 @@ function Dashboard({ onLogout, onProfile }: DashboardProps) {
           </form>
 
           {/* Logout Button */}
-          <div className="text-center animate-slide-up" style={{ animationDelay: '0.3s' }}>
+          <div className="text-center animate-slide-up" style={{ animationDelay: '0.4s' }}>
             <button
               onClick={handleLogout}
               className="px-8 py-4 bg-gray-500 hover:bg-gray-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 ease-in-out focus:outline-none focus:ring-4 focus:ring-gray-300 focus:ring-opacity-50 flex items-center justify-center gap-2 mx-auto"

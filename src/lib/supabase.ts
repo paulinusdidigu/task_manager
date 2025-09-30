@@ -236,3 +236,59 @@ export const generateSubtasks = async (taskTitle: string) => {
     return { data: null, error: { message: error.message } };
   }
 }
+
+// Smart search with vector embeddings
+export const smartSearchTasks = async (query: string) => {
+  const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/smart-search`;
+  
+  const headers = {
+    'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+    'Content-Type': 'application/json',
+  };
+
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ query }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to search tasks');
+    }
+
+    const data = await response.json();
+    return { data: data.results, error: null };
+  } catch (error) {
+    return { data: null, error: { message: error.message } };
+  }
+}
+
+// Generate embedding for a task
+export const generateTaskEmbedding = async (taskId: string, title: string) => {
+  const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-task-embedding`;
+  
+  const headers = {
+    'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+    'Content-Type': 'application/json',
+  };
+
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ taskId, title }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to generate embedding');
+    }
+
+    const data = await response.json();
+    return { data, error: null };
+  } catch (error) {
+    return { data: null, error: { message: error.message } };
+  }
+}
