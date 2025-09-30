@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LogOut, Plus, Trash2, Sparkles, Save, ChevronDown, ChevronUp } from 'lucide-react';
+import { LogOut, Plus, Trash2, Sparkles, Save, ChevronDown, ChevronUp, User } from 'lucide-react';
 import { 
   signOut, 
   getTasks, 
@@ -18,9 +18,10 @@ import {
 
 interface DashboardProps {
   onLogout: () => void;
+  onProfile: () => void;
 }
 
-function Dashboard({ onLogout }: DashboardProps) {
+function Dashboard({ onLogout, onProfile }: DashboardProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [subtasks, setSubtasks] = useState<Record<string, Subtask[]>>({});
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set());
@@ -269,6 +270,16 @@ function Dashboard({ onLogout }: DashboardProps) {
         <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-xl p-8 md:p-12 animate-fade-in">
           {/* Header */}
           <div className="text-center mb-10">
+            <div className="flex justify-between items-center mb-4">
+              <div></div>
+              <button
+                onClick={onProfile}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors duration-200"
+              >
+                <User className="w-4 h-4" />
+                Profile
+              </button>
+            </div>
             <h1 className="text-4xl md:text-5xl font-bold text-gray-800 mb-4 animate-slide-up">
               Your Tasks
             </h1>

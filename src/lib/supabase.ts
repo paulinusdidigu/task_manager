@@ -149,6 +149,66 @@ export const deleteSubtask = async (id: string) => {
   return { error }
 }
 
+// Profile management functions
+export interface Profile {
+  id: string
+  full_name: string | null
+  avatar_url: string | null
+  created_at: string
+  updated_at: string
+}
+
+export const getProfile = async () => {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return { data: null, error: { message: 'User not authenticated' } }
+  }
+  
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', user.id)
+    .single()
+  return { data, error }
+}
+
+export const updateProfile = async (updates: Partial<Profile>) => {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return { data: null, error: { message: 'User not authenticated' } }
+  }
+  
+  const { data, error } = await supabase
+    .from('profiles')
+    .upsert({ id: user.id, ...updates })
+    .select()
+  return { data, error }
+}
+
+export const uploadProfilePicture = async (file: File) => {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return { data: null, error: { message: 'User not authenticated' } }
+  }
+
+  const fileExt = file.name.split('.').pop()
+  const fileName = `${user.id}/avatar.${fileExt}`
+  
+  const { data, error } = await supabase.storage
+    .from('profile-pictures')
+    .upload(fileName, file, { upsert: true })
+  
+  if (error) {
+    return { data: null, error }
+  }
+  
+  const { data: { publicUrl } } = supabase.storage
+    .from('profile-pictures')
+    .getPublicUrl(fileName)
+  
+  return { data: { ...data, publicUrl }, error: null }
+}
+
 // AI subtask generation
 export const generateSubtasks = async (taskTitle: string) => {
   const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-subtasks`;

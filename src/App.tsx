@@ -3,10 +3,11 @@ import { useEffect, useState } from 'react';
 import LoginPage from './components/LoginPage';
 import SignupPage from './components/SignupPage';
 import Dashboard from './components/Dashboard';
+import ProfilePage from './components/ProfilePage';
 import { supabase, getCurrentUser } from './lib/supabase';
 
 function App() {
-  const [currentPage, setCurrentPage] = useState<'home' | 'login' | 'signup' | 'dashboard'>('home');
+  const [currentPage, setCurrentPage] = useState<'home' | 'login' | 'signup' | 'dashboard' | 'profile'>('home');
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -45,6 +46,10 @@ function App() {
     setCurrentPage('dashboard');
   };
 
+  const handleProfile = () => {
+    setCurrentPage('profile');
+  };
+
   const handleBack = () => {
     setCurrentPage('home');
   };
@@ -79,7 +84,11 @@ function App() {
   }
 
   if (currentPage === 'dashboard') {
-    return <Dashboard onLogout={handleLogout} />;
+    return <Dashboard onLogout={handleLogout} onProfile={handleProfile} />;
+  }
+
+  if (currentPage === 'profile') {
+    return <ProfilePage onBack={handleDashboard} />;
   }
 
   return (
